@@ -1,0 +1,1577 @@
+---
+title: "DAT320: Compulsory assignment 2"
+date: "2022-10-30"
+output:
+  html_document: 
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+---
+
+# Exrercise 1
+
+## a)
+
+(Univariate forecasting using Exponential Smoothing & ARIMA)
+The dataset MeatConsumption describes the yearly meat consumption in Norway between 1990 and 2019. In specific, the meat types pig, poultry, beef, and sheep are provided. Data are given in thousand tonnes of carcass weight.
+Material provided:
+• MeatConsumption.csv: dataset
+Tasks:
+(a) Load the dataset and perform an exploratory analysis of the meat consumption for each type of meat (missing values, distribution plots, ACF & PACF, KPSS test, etc.). Are the time series stationary? Which ARIMA parameters would you suggest based on the KPSS test and ACF / PACF?
+
+
+Reading the data
+```{r, results='hide'}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(corrplot)
+library(tseries)
+library(forecast)
+library(ggfortify)
+library(Metrics)
+library(naivebayes)
+library(tidyverse)
+library(TSstudio)
+library(datasets)
+library(imputeTS)
+library(bestNormalize)
+
+```
+
+```{r}
+data <- read.csv("data//meat_consumption.csv",
+                 header = TRUE, sep = ",")
+```
+
+Eploring for missing values and ploting the data based on different types of meats.
+
+```{r}
+# Number of null values
+na_values = which(is.na(data))
+length(na_values)
+
+
+#Plot the data on the basis of subject
+ggplot(data ,aes(x = TIME , y = Value, group = SUBJECT)) + 
+  geom_line() + facet_grid(SUBJECT~., scale = "free_y")
+
+```
+
+Making correlation plot 
+```{r}
+data %>%
+  pivot_wider(names_from = SUBJECT,
+              values_from = Value)  %>%
+   select(-LOCATION) %>%
+  select(-MEASURE)%>%
+  select(-TIME) %>%
+  cor(use =  "pairwise.complete.obs") %>%
+  corrplot(method = 'number')
+```
+
+
+```{r}
+data1 <- data %>%
+  pivot_wider(names_from = SUBJECT, 
+              values_from = Value) %>%
+  select(-LOCATION) %>%
+  select(-MEASURE)%>%
+  select(-TIME)
+```
+
+KPSS test on the data 
+```{r}
+data1 <- ts(data1, start = c(1990) , frequency=1)
+class(data1)
+colnames(data1)
+
+
+kpss.test(data1[,"PIG"])
+kpss.test(data1[,"POULTRY"])
+kpss.test(data1[,"BEEF"])
+kpss.test(data1[,"SHEEP"])
+```
+ 
+ 
+ Based on KPSS test sheep data has not trend but other types of meats have trend behavior over the time period.
+
+
+
+
+
+
+```{r }
+
+# removing the trend of different types of meats except to SHEEP 
+
+beef.dif <- diff(data1[,"BEEF"])
+pig.dif <- diff(data1[,"PIG"])
+poultry.dif <- diff(data1[,"POULTRY"])
+
+
+# ACF
+n <- length(4)
+for(i in 1:3){
+  acf(diff(data1[,i]), main = colnames(data1)[i], lag.max = 20)
+}
+acf(data1[,"SHEEP"], lag.max = 20)
+```
+
+```{r }
+
+# removing the trend
+
+
+# ACF
+n <- length(4)
+for(i in 1:3){
+pacf(diff(data1[,i]), main = colnames(data1)[i], lag.max = 20)
+}
+pacf(data1[,"SHEEP"], lag.max = 20)
+```
+
+
+Based on KPSS test we made ACF and PACF plot for differentiated BEEF, PIG & POULTRY.
+Also ACF & PACF plot for original SHEEP data.
+stationary : Sheep data is stationary and others are not stationary based on KPSS test.
+
+ARIMA parameter suggestion:
+PIG : ARIMA(0,1,0)
+POULTRY : ARIMA(0,1,0)
+BEEF : ARIMA(10,1,0)
+Because the is no spike in pace and ACF plot and also d=1 because it had a trend.
+sheep has no trend so d is 0 for ARIMA MODEL and based on PACF and ACF ARIMA(0,0,1)
+
+
+## b)
+
+Divide the dataset into training (20 years) and testing (9 years). For each meat type, train 4 baseline models (average, drift, naive, seasonal naive) and compute the RMSE on the test set. Further, build an exponential smoothing and an ARIMA model and plot the forecasts. Describe how you select the type of exponential smoothing (model parameter in the ets() function). Provide a matrix showing the RMSE on the test set for all models (see Tab. 1).
+
+
+
+
+Scaling &Train and Test split
+```{r}
+data1 <- scale(data1)
+# Training set
+# Use data from 1990 to 2009 for forecasting
+train = window(data1, start=1990, end=2009)
+
+
+# Test set
+# Use remaining data from 2012 to 2019 to test accuracy
+test = window(data1, start=2010)
+autoplot(train) + autolayer(test)
+```
+
+Four Baseline Models
+
+```{r}
+colnames(train)
+Pig <- train[,"PIG"]
+test.pig <- test[,"PIG"]
+
+
+autoplot(Pig) +
+  autolayer(meanf(Pig, h=10),
+    series="Mean", PI=FALSE) +
+  autolayer(rwf(Pig, h=10),
+    series="Naïve", PI=FALSE) +
+  autolayer(rwf(Pig, h=10),
+    series="snaive", PI=FALSE) +
+  autolayer(rwf(Pig, drift=TRUE, h=10),
+    series="Drift", PI=FALSE) +
+   autolayer(test.pig) +
+  ggtitle("CONSUMPTION OF pig") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+# average method
+mod_avg_pig <- meanf(Pig , h = 10)
+#summary(mod_avg)
+
+# drift model
+mod_drift_pig <- rwf(Pig , drift = TRUE , h = 10)
+#summary(mod_drift)
+# naive method
+mod_naive_pig <- naive(Pig , h = 10)
+#summary(mod_naive)
+# seasonal naive method
+mod_snaive_pig <- snaive(Pig , h = 10)
+#summary(mod_snaive)
+
+
+df_avg_pig = as.data.frame(mod_avg_pig)
+df_drift_pig = as.data.frame(mod_drift_pig)
+df_naive_pig = as.data.frame(mod_naive_pig)
+df_snaive_pig = as.data.frame(mod_snaive_pig)
+
+rmse(test.pig ,df_avg_pig$`Point Forecast`)
+rmse(test.pig ,df_drift_pig$`Point Forecast`)
+rmse(test.pig ,df_naive_pig$`Point Forecast`)
+rmse(test.pig ,df_snaive_pig$`Point Forecast`)
+
+```
+
+
+
+
+```{r}
+colnames(train)
+POULTRY <- train[,"POULTRY"]
+test.poultry <- test[,"POULTRY"]
+
+autoplot(POULTRY) +
+  autolayer(meanf(POULTRY, h=10),
+    series="Mean", PI=FALSE) +
+  autolayer(rwf(POULTRY, h=10),
+    series="Naïve", PI=FALSE) +
+  autolayer(rwf(POULTRY, h=10),
+    series="snaive", PI=FALSE) +
+  autolayer(rwf(POULTRY, drift=TRUE, h=10),
+    series="Drift", PI=FALSE) +
+  autolayer(test.poultry) +
+  ggtitle("CONSUMPTION OF POULTRY") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+
+# average method
+mod_avg_poultry <- meanf(POULTRY , h = 10)
+#summary(mod_avg)
+# drift model
+mod_drift_poultry <- rwf(POULTRY , drift = TRUE , h = 10)
+#summary(mod_drift)
+# naive method
+mod_naive_poultry  <- naive(POULTRY , h = 10)
+#summary(mod_naive)
+# seasonal naive method
+mod_snaive_poultry  <- snaive(POULTRY , h = 10)
+#summary(mod_snaive)
+
+df_avg_poultry  = as.data.frame(mod_avg_poultry)
+df_drift_poultry  = as.data.frame(mod_drift_poultry)
+df_naive_poultry  = as.data.frame(mod_naive_poultry)
+df_snaive_poultry  = as.data.frame(mod_snaive_poultry)
+
+rmse(test.pig ,df_avg_poultry $`Point Forecast`)
+rmse(test.pig ,df_drift_poultry $`Point Forecast`)
+rmse(test.pig ,df_naive_poultry $`Point Forecast`)
+rmse(test.pig ,df_snaive_poultry $`Point Forecast`)
+```
+
+
+
+```{r}
+colnames(train)
+BEEF <- train[,"BEEF"]
+test.beef <- test[,"BEEF"]
+
+autoplot(BEEF) +
+  autolayer(meanf(BEEF, h=10),
+    series="Mean", PI=FALSE) +
+  autolayer(rwf(BEEF, h=10),
+    series="Naïve", PI=FALSE) +
+  autolayer(rwf(BEEF, h=10),
+    series="snaive", PI=FALSE) +
+  autolayer(rwf(BEEF, drift=TRUE, h=10),
+    series="Drift", PI=FALSE) +
+  autolayer(test.beef) +
+  ggtitle("CONSUMPTION OF BEEF") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+
+# average method
+mod_avg_beef <- meanf(BEEF , h = 10)
+#summary(mod_avg)
+# drift model
+mod_drift_beef <- rwf(BEEF , drift = TRUE , h = 10)
+#summary(mod_drift)
+# naive method
+mod_naive_beef <- naive(BEEF , h = 10)
+#summary(mod_naive)
+# seasonal naive method
+mod_snaive_beef <- snaive(BEEF , h = 10)
+#summary(mod_snaive)
+
+df_avg_beef = as.data.frame(mod_avg_beef)
+df_drift_beef = as.data.frame(mod_drift_beef)
+df_naive_beef = as.data.frame(mod_naive_beef)
+df_snaive_beef = as.data.frame(mod_snaive_beef)
+
+rmse(test.pig ,df_avg_beef$`Point Forecast`)
+rmse(test.pig ,df_drift_beef$`Point Forecast`)
+rmse(test.pig ,df_naive_beef$`Point Forecast`)
+rmse(test.pig ,df_snaive_beef$`Point Forecast`)
+```
+
+
+
+
+
+```{r}
+colnames(train)
+SHEEP <- train[,"SHEEP"]
+test.sheep <- test[,"SHEEP"]
+
+autoplot(SHEEP) +
+  autolayer(meanf(SHEEP, h=10),
+    series="Mean", PI=FALSE) +
+  autolayer(rwf(SHEEP, h=10),
+    series="Naïve", PI=FALSE) +
+  autolayer(rwf(SHEEP, h=10),
+    series="snaive", PI=FALSE) +
+  autolayer(rwf(SHEEP, drift=TRUE, h=10),
+    series="Drift", PI=FALSE) +
+  autolayer(test.sheep) +
+  ggtitle("CONSUMPTION OF SHEEP") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+
+# average method
+mod_avg_sheep <- meanf(SHEEP , h = 10)
+#summary(mod_avg)
+# drift model
+mod_drift_sheep <- rwf(SHEEP , drift = TRUE , h = 10)
+#summary(mod_drift)
+# naive method
+mod_naive_sheep <- naive(SHEEP , h = 10)
+#summary(mod_naive)
+# seasonal naive method
+mod_snaive_sheep <- snaive(SHEEP , h = 10)
+#summary(mod_snaive)
+
+df_avg_sheep = as.data.frame(mod_avg_sheep)
+df_drift_sheep = as.data.frame(mod_drift_sheep)
+df_naive_sheep = as.data.frame(mod_naive_sheep)
+df_snaive_sheep = as.data.frame(mod_snaive_sheep)
+rmse(test.pig ,df_avg_sheep$`Point Forecast`)
+rmse(test.pig ,df_drift_sheep$`Point Forecast`)
+rmse(test.pig ,df_naive_sheep$`Point Forecast`)
+rmse(test.pig ,df_snaive_sheep$`Point Forecast`)
+```
+
+ARIMA Models
+
+```{r}
+mod_arima_pig <- auto.arima(Pig)
+# model summary
+summary(mod_arima_pig)
+# model parameters
+#mod_arima$coef
+# 12-step -ahead forecast
+df_arima_pig <- forecast(mod_arima_pig , h = 10)
+df_arima_pig = as.data.frame(df_arima_pig)
+rmse(test.pig ,df_arima_pig$`Point Forecast`)
+
+
+autoplot(Pig) +
+  autolayer(forecast(mod_arima_pig , h = 10))+
+  autolayer(test.pig) +
+  ggtitle("CONSUMPTION OF PIG") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+
+
+```{r}
+mod_arima_poultry <- auto.arima(POULTRY)
+# model summary
+summary(mod_arima_poultry)
+# model parameters
+#mod_arima$coef
+# 12-step -ahead forecast
+forecast(mod_arima_poultry , h = 10)
+df_arima_poultry <- forecast(mod_arima_poultry , h = 10)
+df_arima_poultry = as.data.frame(df_arima_poultry)
+rmse(test.poultry ,df_arima_poultry$`Point Forecast`)
+
+
+autoplot(POULTRY) +
+  autolayer(forecast(mod_arima_poultry , h = 10))+
+  autolayer(test.poultry) +
+  ggtitle("CONSUMPTION OF POULTRY") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+
+
+```{r}
+mod_arima_beef <- auto.arima(BEEF)
+# model summary
+summary(mod_arima_beef)
+
+# 10-step -ahead forecast
+forecast(mod_arima_beef , h = 10)
+df_arima_beef <- forecast(mod_arima_beef , h = 10)
+df_arima_beef = as.data.frame(df_arima_beef)
+rmse(test.beef ,df_arima_beef$`Point Forecast`)
+
+
+autoplot(BEEF) +
+  autolayer(forecast(mod_arima_beef , h = 10))+
+  autolayer(test.beef) +
+  ggtitle("CONSUMPTION OF BEEF") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+
+
+```{r}
+mod_arima_sheep <- auto.arima(SHEEP)
+# model summary
+summary(mod_arima_sheep)
+
+
+# 10-step -ahead forecast
+forecast(mod_arima_sheep , h = 10)
+df_arima_sheep <- forecast(mod_arima_sheep , h = 10)
+df_arima_sheep = as.data.frame(df_arima_sheep)
+rmse(test.sheep ,df_arima_sheep$`Point Forecast`)
+
+
+autoplot(SHEEP) +
+  autolayer(forecast(mod_arima_sheep , h = 10))+
+  autolayer(test.sheep) +
+  ggtitle("CONSUMPTION OF SHEEP") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+Exponetial Smoothing Model  
+We perform Holt ETS damped model on Pig , Beef and Poultry data because they have a trend behavior and the damped one flatten up the predictions after the steps that we want but we used ses method for Sheep data because of having no trend.
+```{r}
+mod_holt_pig <- ets(Pig , model = "AAN", damped = TRUE) # Holt method (damped)
+
+# model summary
+summary(mod_holt_pig)
+
+# 10-step -ahead forecast
+df_holt_pig <- forecast(mod_holt_pig , h = 10)
+
+rmse(test.pig ,df_holt_pig$mean)
+# plot
+plot(df_holt_pig)
+
+```
+```{r}
+mod_holt_poultry <- ets(POULTRY , model = "AAN", damped = TRUE) # Holt method (damped)
+
+# model summary
+summary(mod_holt_poultry)
+
+# 10-step -ahead forecast
+df_holt_poultry <- forecast(mod_holt_poultry , h = 10)
+
+rmse(test.poultry ,df_holt_poultry$mean)
+# plot
+plot(df_holt_poultry)
+```
+
+```{r}
+mod_holt_beef <- ets(BEEF , model = "AAN", damped = TRUE) # Holt method (damped)
+
+# model summary
+summary(mod_holt_beef)
+# model parameters
+mod_holt_beef$par 
+# 10-step -ahead forecast
+df_holt_beef <- forecast(mod_holt_beef , h = 10)
+
+rmse(test.beef ,df_holt_beef$mean)
+
+# plot
+plot(df_holt_beef)
+
+```
+```{r}
+sheep_ses <- ets(SHEEP , model = "ANN") # SES method
+
+# model summary
+summary(sheep_ses)
+
+# 10-step -ahead forecast
+df_ses_sheep <- forecast(sheep_ses , h = 10)
+
+rmse(as.vector(test.sheep),as.vector(df_ses_sheep$mean))
+
+# plot
+plot(df_ses_sheep)
+
+```
+
+
+```{r}
+Model <- c("Mean" , "Drift" , "Naive" , "Snaive" , "ARIMA" , "EST")
+PIG <- c(rmse(test.pig ,df_avg_pig$`Point Forecast`),
+rmse(test.pig ,df_drift_pig$`Point Forecast`),
+rmse(test.pig ,df_naive_pig$`Point Forecast`),
+rmse(test.pig ,df_snaive_pig$`Point Forecast`),
+rmse(test.pig ,df_arima_pig$`Point Forecast`),
+rmse(test.pig ,df_holt_pig$mean))
+POULTRY <-c(rmse(test.pig ,df_avg_poultry $`Point Forecast`),
+rmse(test.pig ,df_drift_poultry $`Point Forecast`),
+rmse(test.pig ,df_naive_poultry $`Point Forecast`),
+rmse(test.pig ,df_snaive_poultry $`Point Forecast`),
+rmse(test.poultry ,df_arima_poultry$`Point Forecast`),
+rmse(test.poultry ,df_holt_poultry$mean))
+BEEF <-c(rmse(test.pig ,df_avg_beef$`Point Forecast`),
+rmse(test.pig ,df_drift_beef$`Point Forecast`),
+rmse(test.pig ,df_naive_beef$`Point Forecast`),
+rmse(test.pig ,df_snaive_beef$`Point Forecast`),
+rmse(test.beef ,df_arima_beef$`Point Forecast`),
+rmse(test.beef ,df_holt_beef$mean))
+SHEEP <-c(rmse(test.pig ,df_avg_sheep$`Point Forecast`),
+rmse(test.pig ,df_drift_sheep$`Point Forecast`),
+rmse(test.pig ,df_naive_sheep$`Point Forecast`),
+rmse(test.pig ,df_snaive_sheep$`Point Forecast`),
+rmse(test.sheep ,df_arima_sheep$`Point Forecast`),
+rmse(test.sheep ,df_ses_sheep$mean))
+
+
+df <- data.frame(Model, PIG , POULTRY, BEEF , SHEEP)
+df
+
+```
+
+
+## c)
+
+Describe the benefits and drawbacks of the models applied in task (b). Take the properties of the time series into account. Which model performs best?
+
+
+
+According to models that we performed in task b and mertrics that there are at the last part of that ,we can say that mean baseline has the worst result for prediction except to SHEEP data because it takes the avarage of data and give this average value to the future data which is not precise. But in Sheep data we can see stationary in that and based on that average model works well.
+
+Drift model has better performance for the prediction compare to mean model. Using this model has decreased the RMSE significantly in PIG and POULTRY data, a little bit in BEEF but it didnt change much in SHEEP data , maybe it happens because it has no trend.
+
+Naive and Snaive model has nice performance on PIG data and it decreases RMSE so much but it does not change performance in POULTRY and BEEF data also in SHEEP data it has worst performance.
+
+ARIMA model performs best on SHEEP data and POULTRY data and BEEF data but it is not performs as good as naive and snaive on PIG data.
+
+finally, ETS model has not good performance on the data except for PIG data.
+In result, ARIMA model has better performance on average.
+
+
+
+## d)
+ 
+According to Hyndman and Athanasopoulos (2021, chapter 9.10, https: // otexts. com/ fpp3/ arima-ets. html ), certain types of exponential smoothing models are special cases of ARIMA models. Considering only beef, compute the ARIMA parameters for the exponential smoothing model used in (b) using the formula in the book. Use the computed parameters in R to perform a forecast. The parameters can be used in the fixed argument of the forecast::arima() function. Compare the results with models in (b).
+
+
+Based on task b the parameters are:
+
+Smoothing parameters:
+    alpha = 0.0352 
+    beta  = 0.0352 
+    phi   = 0.8 
+ 
+Initial states:
+    l = 72.2922 
+    b = 5.3575 
+    
+    
+so we have :
+\(\varphi_1 = \phi = 0.8\)
+
+
+\(\theta_1 = \alpha + \phi\beta -1 - \phi = -1.73664\)
+
+
+\(\theta_2 = (1-\alpha)\phi = 0.77\)
+
+By comparing the results with previous models in task b we can see that drift had the best result among other models on BEEF data with 0.8061863	value arima model in this part is better than auto ARIMA(1.3783782	)  in task b with  1.287063 amount but it is not better than ETS model(1.2251895) there and Mean model had high RMSE with 1.6444130	amount. Also Naive and Snaive had 1.3145526	performance in RMSE.
+```{r}
+BEEF <- train[,"BEEF"]
+test.beef <- test[,"BEEF"]
+
+arima_ets_beef <- arima(BEEF , order =c(1,1,2) ,fixed = c(phi_1 = 0.8, theta_1 = -1.73664 , theta_2 = 0.77))
+
+summary(arima_ets_beef)
+df_arima_ets_beef <- forecast(arima_ets_beef , h = 10)
+df_arima_ets_beef = as.data.frame(df_arima_ets_beef)
+rmse(test.beef ,df_arima_ets_beef$`Point Forecast`)
+
+
+
+
+autoplot(BEEF) +
+  autolayer(forecast(arima_ets_beef , h = 10))+
+  autolayer(test.beef) +
+  ggtitle("CONSUMPTION OF BEEF") +
+  xlab("year") + ylab("Consumption") +
+  guides(colour=guide_legend(title="Forecast"))
+
+```
+
+
+
+
+# Exercise 2
+
+## a)
+
+- Loading all the library`s we need
+
+```{r}
+
+```
+
+- Loading the dataset 
+
+```{r}
+death <- read.csv("data//USAccidents.csv", header = TRUE, sep = ",")
+death$date <- as.Date(death$date)
+```
+
+- Exploring the dataset, before we make it to time series data
+
+```{r}
+dim(death)
+```
+
+- We see that we have 72 observations and two columns 
+
+```{r}
+head(death)
+```
+
+- We see that the date is one colum and accident deaths are another
+
+```{r}
+summary(death)
+```
+
+- We see that we have a very close normally distributed data, we look at the mean and median which are very alike
+
+- Plot the data on the basis of year
+
+```{r}
+ggplot(data = death, aes(x = date, y =accident_deaths, color = date)) +
+  geom_point()
+
+```
+
+- In this plot we see that the highest death rates, the dark blue on the top are from some of the earlier years. 
+
+- We visual this with year one the x-axis and counts on the y-axis. 
+
+```{r}
+ggplot(data = death, aes( x = date, y = accident_deaths)) +
+  geom_line()
+```
+
+- With this plot we can see that better we se that we have a top at 1973 which is the highest. 
+
+- Auto and cross correlation on the original data frame, just to look at it.
+
+```{r}
+acf(death$accident_deaths)
+```
+
+```{r}
+ccf(death$accident_deaths, death$date)
+```
+
+- We see that we have several significant correlations here in the autocorrelation plot, more significant high value than low, and in the cross correlation plot we see that we have many spikes of low correlations. 
+
+- Transform the data to time series data
+
+```{r}
+death.ts <- ts(death[,-1], frequency = 12, start=c(1973, 1, 1))
+death.ts
+```
+
+- Now we look at some distribution plots to look at the times series data  
+
+```{r}
+plt_death <- data.frame(accident_deaths=as.matrix(death.ts),
+                        month=time(death.ts))
+                        
+plt_death <- plt_death %>% mutate(year = as.integer(month),
+                            month = round (( month * 12) %% 12) + 1)
+summary_month <- plt_death %>% group_by(month) %>% summarize(
+  mean_accident_deaths = mean(accident_deaths), sd_accident_deaths = sd(
+    accident_deaths))
+
+summary_year <- plt_death %>% group_by(month) %>% 
+  summarize( mean_accident_deaths = mean(accident_deaths), sd_accident_deaths = sd(
+  accident_deaths))
+    
+```
+
+- The first plot is a density plot, that show the mean and median, and we se that the data is normally distributed, as we mentioned before just looking at the mean and median value. 
+
+```{r}
+p <- ggplot(plt_death, aes(x =
+   accident_deaths)) +
+  geom_density(size = 1) +
+  geom_vline(aes(xintercept = 
+                   mean(accident_deaths), color
+                 = "red"), size = 0.5) + 
+  geom_vline(aes(xintercept =
+                   median(accident_deaths), 
+                 color = "blue"), size =
+               0.5) +
+  scale_color_discrete(labels
+                       = c("mean", "median")) + xlim(1000, 15000)
+p
+```
+
+- Box plot showing deaths per month
+
+```{r}
+m <- month.abb 
+names(m) <- 1:12
+
+p <- ggplot(plt_death, aes(y =
+                             accident_deaths)) +
+   geom_boxplot() +
+  facet_grid(.~month, labeller
+             = as_labeller(m)) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+p
+```
+
+- Here we see that, the death rate is higher in the summer months. june, july and august, with july as the highest. 
+
+- box plot showing death per year
+
+```{r}
+p <- ggplot(plt_death, aes(y =  accident_deaths)) +
+  geom_boxplot() +
+  facet_grid(.~year) +
+  theme(axis.text.x = element_blank(),
+axis.ticks.x = element_blank())
+p
+```
+
+- Again we see that 1973 have the highest death rates, and 1974 and 1978 have a high spread. and 1975 have the lowest median. 
+
+- Line plot for seasonality
+
+```{r}
+p <- ggplot(plt_death, aes(x =
+                             
+  month , y = accident_deaths ,
+  color = as.factor(year)))+ 
+  geom_line() +
+  geom_point() + 
+    scale_x_continuous(labels =
+    month.abb, breaks = 
+  1:12) +
+    scale_color_discrete() + 
+    labs(color = "year") 
+    
+p
+```
+
+```{r}
+p <- ggplot(plt_death, aes(x =
+                             year , y = accident_deaths ,
+                           color = as.factor(month))) +
+  geom_line() +
+  geom_point() +
+  scale_color_discrete(labels
+                        = month.abb) + labs(color = "month")
+p
+```
+
+- We see that we don't have a trend, we have a seasonality within the years, we se that the summer months have the most deaths. we also see that there is no trend not over the years or over the months, but we see in the first plot that the seasonality is higher over the years, within the months. 
+
+- We plot the time series, and see what we saw in the earlier plot of the data. 
+
+```{r}
+death.ts %>% autoplot()
+```
+
+- We see that we have don`t have a trend, but a seasonality.  
+
+```{r}
+summary(death.ts)
+```
+
+
+- Making a histogram over the data
+
+```{r}
+death %>% ggplot(aes(x = accident_deaths)) + geom_histogram(fill = "white", color = "black", bins = 30)
+```
+
+- Then we check the stats, her we will also see if we have NA values
+
+```{r}
+statsNA(death.ts)
+```
+
+- We see that we don`t have any missing values. 
+
+- Using kpss to check one more time for trends 
+
+```{r}
+kpss.test(death.ts)
+```
+
+- we have p-value = 0.1 which is > 0.05 this means we have don`t have a trend. And therefor we don`t use the difference, on the data.
+
+ - plot ACF and PACF 
+ 
+```{r}
+acf_values = acf(death.ts, plot = FALSE, lag.max = 20)
+plot(acf_values)
+```
+
+```{r}
+pacf_values = pacf(death.ts, plot = FALSE, lag.max = 20)
+plot(pacf_values)
+```
+
+
+```{r}
+mod_arima <- auto.arima(death.ts)
+summary(mod_arima)
+```
+
+- So the best Arima model is, (p,d,q) - > (1,0,1). So based on the ACF and PACF this is what we would chose for the Arima. And the data is stationary, we don't have a trend. But we have a seasonality so we need to reconsider the Arima model we decided use (0,1,1)(0,1,1)[12], since we have seasonality with 12 months. 
+
+
+## b)
+
+- Implement cross validation for the data set, by using 24 months as initial fold for training and forecast h= 12 months ahead. 
+
+```{r}
+ets_model <-function(train_data, test_data){
+  model = forecast::ets(train_data)
+  pred = forecast(model, h=12)
+  rmse_val = rmse(ts(pred$mean), ts(test_data))
+  return (rmse_val)
+}
+```
+
+```{r}
+arima_model <-function(train_data, test_data){
+  model = Arima(train_data, order=c(1,0,0), seasonal = list(order = c(1,0,0), period = 12))
+  pred = forecast(model, h=12)
+  rmse_val = rmse(ts(pred$mean), ts(test_data))
+  return (rmse_val)
+}
+```
+
+```{r}
+cross_validation <- function(data, model, start_size, inc_size){
+  rmse_values = c()
+  for (i in seq(start_size, length(data), inc_size)){
+    if (i+inc_size <=length(data)){
+      
+      data_train = data[c(1:i)]
+      
+      x = i+1
+      y = i+inc_size
+      
+      
+      data_test = data[c(x:y)]
+      
+      if (model=="ets"){
+        rmse_val = ets_model(data_train, data_test)
+      }
+      if (model=="arima") {
+        rmse_val = arima_model(data_train, data_test)
+      }
+      rmse_values = append(rmse_values, rmse_val)
+    }
+  }
+  return (rmse_values)
+}
+```
+
+## c)
+
+
+- Train an exponential smoothing model
+
+```{r}
+etsvec = cross_validation(death.ts, "ets", 24, 12)
+etsvec
+```
+
+
+- Then we do the ARIMA 
+
+```{r}
+vecarima = cross_validation(death.ts, "arima", 24, 12)
+vecarima
+```
+
+- calculation the mean and rmse across the folds, by using the metrics package, this is easy.  
+
+```{r}
+# for the ets model
+print(mean(etsvec))
+print(sd(etsvec))
+```
+
+```{r}
+# for the arima model
+print(mean(vecarima))
+print(sd(vecarima))
+```
+
+## d)
+
+- We have different RMSE score for the arima model and for the ets model. We de that for the ets model we have higher rmse values than for the arima model. This means that the cross correlation for arima has lower rmse, which means that this can predict the model better than the eta model. This indicates that arima is a better fit. But we know that the arima will focus on the auto correlation, and the ets will focus on the trend and seasonality, and here then seasonality since we don`t have a trend. This is the reason why we get som different values, the two models focus on different main components. We also know that we define the arima more concrete for the data we have, with the p,d and q. And ets is often used on non-stationary data and we know our data is stationary, and this may be a reason for this high numbers for the ets. 
+
+
+# Exercise 3
+Univariate forecasting with exogeneous inputs  
+  
+The dataset traffic volume contains the hourly traffic volume of Interstate 94 between
+Minneapolis and St Paul, MN, USA, between 2012 and 2018. In addition to the hourly traffic 
+volume, environmental aspects like rain, snow, clouds and temperature are presumed
+to influence the traffic volume.
+
+## a)
+
+Load and explore the dataset. Check for missing values, and plot the data. Investigate
+whether the traffic time series is stationary (ACF & PACF, KPSS test). Interpret
+the results. Restrict the data to 01.01.2013 - 31.12.2015. Hint: you may work with
+daily averaged values. Is a seasonal model useful?  
+
+Reading the CSV file.
+```{r}
+df = read.csv("data//traffic_volume.csv")
+```
+
+
+Let's check out the dataframe's shape.  
+```{r}
+print(c(nrow(df),ncol(df)))
+```
+Dataframe has 6 columns and 52527 rows
+  
+Let's look at some data samples. 
+```{r}
+head(df)
+```
+  
+Checking for Null values. 
+```{r}
+print(which(is.na(df)))
+```
+There are no null values.
+  
+We have Hourly data present. Let's take the daily average for each column to make calculations easier. 
+```{r}
+df_avg = df %>% group_by(date = as.Date(df$date_time)) %>%
+  summarise(avg_traffic_volume = mean(traffic_volume),
+            avg_rain = mean(rain),
+            avg_snow = mean(snow),
+            avg_clouds = mean(clouds),
+            avg_temperature = mean(temperature))
+```
+
+
+
+Let's look at the Dataframe shape now. 
+```{r}
+print(c(nrow(df_avg),ncol(df_avg)))
+```
+We've gone down to 2189 observations. 
+
+Separating the column names. 
+```{r}
+date_col = names(df_avg)[1]
+rest_cols = names(df_avg)[-1]
+print(c(date_col,rest_cols))
+```
+
+
+Let's plot the data. 
+```{r}
+for (col in rest_cols){
+  x <- ggplot(data=df_avg, aes_string(x=date_col, y=col, group=1)) +
+  geom_line()+
+  geom_point()
+  print(x)
+}
+```
+
+We see some seasonality in average traffic volume.   
+There seems to be an absence of rain in between 2016 and 2018. This might affect predictions.  
+There seems to be no rain after 2016. This might affect predictions.  
+There is no discernible pattern in the clouds data. 
+Daily average temperature has a high seasonality.  
+
+
+Let's look at the ACF plots.  
+```{r}
+for (col in rest_cols){
+  acf_values = acf(df_avg[col], plot = FALSE, lag.max = 20)
+  plot(acf_values, main = paste("ACF Plot for column", col))
+}
+```
+
+
+ACF plot for traffic volume has a sinusoidal structure. This tells us that there is seasonality in the data, with period 7. Which makes sense that given that is a traffic data. This means the data is not stationary.  
+Rain doesn't have seasonality. Autocorrelation is at around 0.25 in lag 1.  
+Snow doesn't have seasonality.    
+Clouds seem to have a steady decline in autocorrelation.  
+Temperature data has a near constant autocorrelation. meaning that this value stays relatively constant over time. 
+
+Let's repeat the process with a lag of 2 years.
+
+```{r}
+for (col in rest_cols){
+  acf_values = acf(df_avg[col], plot = FALSE, lag.max = 365*2)
+  plot(acf_values, main = paste("ACF Plot for column", col))
+}
+```
+
+Now we see high seasonality of time period 365 days in rain, clouds as well as temperature.  
+**This tells us that we will need to look at a seasonal model**  
+
+```{r}
+x = diff(as.ts(df_avg['avg_traffic_volume'], frequency=7),lag=7, differences=1)
+acf_values = acf(x, plot = FALSE, lag.max = 20)
+plot(acf_values, main = paste("ACF Plot for differenced avg_traffic_volume"))
+```
+
+The ACF plot doesn't show strong correlation at later time points anymore. 
+
+```{r}
+for (col in rest_cols[-1]){
+  x = diff(as.ts(df_avg[col], frequency=365),lag=365, differences=1)
+  acf_values = acf(x, plot = FALSE, lag.max = 365*2)
+  plot(acf_values, main = paste("ACF Plot for differenced", col))
+}
+```
+
+The strong seasonality in the temperature data has been removed. 
+
+
+
+Let's now look at the PACF values. 
+```{r}
+for (col in rest_cols){
+  pacf_values = pacf(as.ts(df_avg[col]), plot = FALSE, lag.max = 20)
+  plot(pacf_values, main = paste("PACF Plot for column", col))
+}
+```
+
+All PACF plots show exponential decaying behaviour. 
+
+
+Let's perform the KPSS tests. 
+```{r}
+# KPSS test
+for (col in rest_cols){
+  print(col)
+  print(kpss.test(as.ts(df_avg[col])))
+}
+```
+
+Rain, clouds and temperatures have trends according to the KPSS test. 
+We need to perform differentiation on these values. 
+
+
+```{r}
+kpss.test(diff(as.ts(df_avg['avg_rain']),1))
+```
+
+A single differentiation is enough for the Rain data. 
+
+```{r}
+kpss.test(diff(as.ts(df_avg['avg_clouds']),1))
+```
+A single differentiation is enough for the cloud data 
+
+```{r}
+kpss.test(diff(as.ts(df_avg['avg_temperature']),1))
+```
+A single differentiation is enough for the temperature data. 
+
+
+```{r}
+ggplot(df_avg, aes(x = avg_traffic_volume)) + geom_histogram() 
+```
+
+The data is skewed. A box-cox transformation could help. 
+
+```{r}
+bc_transform.bN <- bestNormalize :: boxcox(df_avg$avg_traffic_volume, standardize = TRUE)
+print(bc_transform.bN$lambda)
+```
+```{r}
+df_avg$avg_traffic_volume_bc = bc_transform.bN$x.t
+ggplot(df_avg, aes(x = avg_traffic_volume_bc)) + geom_histogram() 
+```
+
+The data still seeme skewed. Let's try the Yeo-Johnson transformation. 
+
+```{r}
+yj_transform.bN <- bestNormalize :: yeojohnson(df_avg$avg_traffic_volume, standardize = TRUE)
+df_avg$avg_traffic_volume_yj = yj_transform.bN$x.t
+ggplot(df_avg, aes(x = avg_traffic_volume_yj)) + geom_histogram() 
+```
+
+The data looks better with the Yeo-Johnson transformation. 
+
+```{r}
+df_avg$avg_traffic_volume = df_avg$avg_traffic_volume_yj
+```
+
+Let's also scale the other variables. 
+
+```{r}
+df_avg[,c("avg_rain","avg_snow","avg_clouds","avg_temperature")]<- scale(df_avg[,c("avg_rain","avg_snow","avg_clouds","avg_temperature")])
+```
+
+
+
+
+## b)
+
+Split the data into training and testing (training: 2013-14, testing: 2015) and train
+a (S)ARIMA model (without covariates) with auto.arima.
+Plot the forecast and
+compute the RMSE. Check the residuals and argue whether your model is a good
+choice for this type of data.
+
+
+Restricting the data to 01.01.2013 - 31.12.2015
+```{r}
+df_filtered <- df_avg %>%
+  filter(between(date, as.Date("2013-01-01"), as.Date("2015-12-31")))
+```
+
+Splitting the data into train and test
+```{r}
+df_train = df_filtered %>%
+  filter(between(date, as.Date("2013-01-01"), as.Date("2014-12-31")))
+df_test = df_filtered %>%
+  filter(between(date, as.Date("2015-01-01"), as.Date("2015-12-31")))
+```
+
+```{r}
+avg_traffic_volume.train = ts(df_train$avg_traffic_volume, frequency=365, start=c(2013,1))
+avg_traffic_volume.test = ts(df_test$avg_traffic_volume, frequency=365, start=c(2015,1))
+```
+
+
+
+Training a model without the covariates. 
+```{r}
+model_sarima_auto = auto.arima( ts(avg_traffic_volume.train, frequency=7))
+```
+
+```{r}
+summary(model_sarima_auto)
+```
+
+We got a ARIMA(2,0,0)(0,1,1)[7] model. 
+
+```{r}
+model_sarima = Arima(avg_traffic_volume.train,
+                     order =c(2,0,0), 
+                     seasonal = list(order = c(0,1,1), 
+                                     period = 7))
+```
+
+
+```{r}
+sarima_pred = forecast(model_sarima, h = 365)
+```
+
+```{r}
+sarima_pred %>% autoplot()
+```
+
+Let's see how it compares to the test data. 
+
+```{r}
+sarima_pred %>% autoplot() + autolayer(avg_traffic_volume.test) 
+```
+
+Calculating the RMSE
+
+```{r}
+rmse(ts(sarima_pred$mean), ts(avg_traffic_volume.test))
+```
+
+
+Checking the residuals.
+```{r}
+checkresiduals(model_sarima)
+```
+
+Residuals are quite high. The model is not very good at capturing all information.
+
+
+## c)
+Train a (S)ARIMAX (dynamic regression) model with climate measurements as covariates. Plot the forecast and compute the RMSE.
+
+
+```{r}
+model_sarimax_auto = auto.arima(ts(avg_traffic_volume.train, frequency=7), 
+                              xreg = as.matrix(df_train[,c("avg_rain","avg_snow","avg_clouds","avg_temperature")])
+                              )
+```
+
+```{r}
+summary(model_sarimax_auto)
+```
+
+We got an ARIMAX model ARIMA(2,0,2)(0,1,1)[7].
+
+```{r}
+model_sarimax = Arima(avg_traffic_volume.train, 
+                      order = c(2,0,2), 
+                      seasonal = list(order = c(0,1,1), period = 7),
+                      xreg = as.matrix(df_train[c("avg_rain","avg_snow","avg_clouds","avg_temperature")])
+                      )
+```
+
+```{r}
+sarimax_pred = forecast(model_sarimax, 
+                        h = 365,
+                        xreg = as.matrix(df_test[c("avg_rain","avg_snow","avg_clouds","avg_temperature")])
+                        )
+```
+
+```{r}
+sarimax_pred %>% autoplot()
+```
+
+
+```{r}
+sarimax_pred %>% autoplot() + autolayer(avg_traffic_volume.test) 
+```
+
+Calculating the RMSE
+
+```{r}
+rmse(ts(sarimax_pred$mean), ts(avg_traffic_volume.test))
+```
+
+Checking the residuals. 
+```{r}
+checkresiduals(model_sarimax)
+```
+
+
+
+```{r}
+model_sarimax$residuals %>% autoplot()
+```
+
+## d)
+
+Compare the two models in (b) and (c). What are the benefits/drawbacks of taking covariates into account?
+
+
+The RMSE of the SARIMA and SARIMAX model were 0.9696305 and 0.8644731 respectively. For a multivariate time series, the inclusion of the covariates gives us better performance as we have additional data to work with that influence our target variable. It also increases the model complexity by introducing additional terms during computation.
+
+
+# Exercise 4
+
+## a)
+To simulate time series following an AR(2) or MA(2) model without intercept, consider the following instructions:
+- sample a vector Et of tmax i.i.d. errors from a Gaussian distribution (rnorm(n=t_max + 100, mean=0, sd=sigma)).
+Implement the given simulation procedure as an R function. Set a random seed (e.g.,
+set.seed(10)) and use the function to simulate 3 time series for each model parameter combination specified in Tab. 2. Set the length of the time series to tmax = 1000
+time points and the error standard deviation to σ = 0.1. Which of the parameter
+combinations in Tab. 2 describe proper AR(2) or MA(2) models?
+
+```{r ex4_task1, message=FALSE, warning=FALSE}
+
+# rnorm = random number generator
+set.seed(10)
+
+#Autoregressive models (AR) : function to calculate AR2
+AR2.sim <- function(t_max, ar1, ar2, sigma)
+{
+  Xt = c(0,0)
+
+  for (i in 2:t_max)
+  {
+    et = rnorm(n=t_max + 100, mean=0, sd=sigma)
+    Xt[i+1] = ar1*Xt[i] + ar2*Xt[i-1] + et
+  }
+  while (i < 3)
+  {
+    Xt[i] = et
+  }
+  Xt
+}
+
+#Moving-Average models (MA) : function to calculate AR2
+MA2.sim <- function(t_max, ar1, ar2, sigma)
+{
+  Xt = c(0,0)
+  et = rnorm(n=t_max + 100, mean=0, sd=sigma)
+  for (i in 2:t_max)
+  {
+    Xt[i+1] = ar1*et[i] + ar2*et[i-1] + et
+  }
+  while (i < 3)
+  {
+    Xt[i] = et
+  }
+  Xt
+}
+
+# Autoregressive models (AR)
+plot_ar <- function(t_max, ar1, ar2, sigma){
+  par(mfrow = c(3, 1))
+  for (x in 1:3) {
+    Xt_AR = AR2.sim(t_max, ar1, ar2, sigma)
+    Xt_AR=tail(Xt_AR,-100)
+    assign(paste0("Xt_AR_", x), Xt_AR)
+    plot(Xt_AR, type = "l", main=paste0("Xt_AR_", x))
+  }
+}
+# Autoregressive models (AR) : plots acf and pacf
+plot_ac_pacf_ar <- function(t_max, ar1, ar2, sigma){
+  layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
+  for (x in 1:3) {
+    print(x)
+    Xt_AR = AR2.sim(t_max, ar1, ar2, sigma)
+    Xt_AR=tail(Xt_AR,-100)
+    assign(paste0("Xt_AR_", x), Xt_AR)
+    print(kpss.test(Xt_AR,null="Trend"))
+    plot(Xt_AR, type = "l", main=paste0("Xt_AR_", x))
+    
+    # test for trends
+    acf(Xt_AR,main=paste0("Xt_AR_", x))
+    pacf(Xt_AR, main=paste0("Xt_AR_", x))
+  }
+}
+
+
+# Autoregressive models (AR) : autoarima with autoplot
+autoarima_plot_ar <- function(t_max, ar1, ar2, sigma){
+  for (x in 1:3) {
+    Xt_AR = AR2.sim(t_max, ar1, ar2, sigma)
+    Xt_AR=tail(Xt_AR,-100)
+    fit <- auto.arima(Xt_AR)
+    fit %>% autoplot()
+    plot(fit)
+    plot(forecast(fit))
+    # summarize model
+    summary(fit)
+  }
+}
+
+#Moving-Average models (MA)
+plot_ma <- function(t_max, ar1, ar2, sigma){
+  par(mfrow = c(3, 1))
+  for (x in 1:3) {
+    Xt_MA = MA2.sim(t_max, ar1, ar2, sigma)
+    Xt_MA=tail(Xt_MA,-100)
+    assign(paste0("Xt_MA_", x), Xt_MA)
+    plot(Xt_MA, type = "l", main=paste0("Xt_MA_", x))
+  }
+}
+
+#Moving-Average models (MA): plots acf and pacf
+plot_ac_pacf_ma <- function(t_max, ar1, ar2, sigma){
+  layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
+  for (x in 1:3) {
+    print(x)
+    Xt_MA = MA2.sim(t_max, ar1, ar2, sigma)
+    Xt_MA=tail(Xt_MA,-100)
+    assign(paste0("Xt_MA_", x), Xt_MA)
+    print(kpss.test(Xt_MA,null="Trend"))
+    plot(Xt_MA, type = "l", main=paste0("Xt_MA_", x))
+    
+    # test for trends
+    acf(Xt_MA,main=paste0("Xt_MA_", x))
+    pacf(Xt_MA, main=paste0("Xt_MA_", x))
+  }
+}
+
+
+# Moving-Average models (MA): autoarima with autoplot
+autoarima_plot_ma <- function(t_max, ar1, ar2, sigma){
+  for (x in 1:3) {
+    Xt_MA = MA2.sim(t_max, ar1, ar2, sigma)
+    Xt_MA=tail(Xt_MA,-100)
+    fit <- auto.arima(Xt_MA)
+    fit %>% autoplot()
+    plot(fit)
+    plot(forecast(fit))
+    # summarize model
+    summary(fit)
+  }
+}
+
+plot_ar(1100,  0.6, -0.3, 0.1)
+plot_ar(1100,  0.8, 0.2, 0.1)
+plot_ma(1100,  0.6, -0.3, 0.1)
+plot_ma(1100,  0.8, 0.2, 0.1)
+```
+  
+  
+AR(2) with  0.8, 0.2  violates the side conditions stated for AR(2) models. To be stationary, it should satisfy all the following:
+
+
+  - $\Theta_{1} + \Theta_{2} < 1$
+  
+  - $\Theta_{1} - \Theta_{2} < 1$
+  
+  - $|\Theta_{2}| < 1$
+
+So, the first combination (0.6, -0.3) for AR(2) describe proper AR(2) model because it validates all the condition. 
+
+## b) 
+Plot and compare all time series simulated in (a), as well as their ACFs and PACFs.
+Perform a KPSS tests - are the time series stationary?
+
+
+KPSS test : if p-value is < significance level (0.05), then the series is non-stationary. ACF and PACF assume stationary of the underlying time series. For a stationary time series, the ACF will drop to zero relatively quickly, while the ACF of non-stationary data decreases slowly.  
+
+
+In first combination of parameters:
+
+ - The first simulation: 
+   We can see strong correlation with second lag. There is a steep drop in the ACF plot that shows that the simulation is stationary. KPSS test(p<0.05 = 0.1) also shows that the simulation is stationary. PACF plot shows that the second lad is negatively correlated.
+
+- The second simulation: 
+     We can see strong correlation with second lag. There is a steep drop in the ACF plot that shows that the simulation is stationary. KPSS test(p<0.05 = 0.1) also shows that the simulation is stationary.PACF plot shows that the second lad is negatively correlated.
+
+- The third simulation: 
+     We can see strong correlation with second lag. There is a steep drop in the ACF plot that shows that the simulation is stationary. KPSS test(p<0.05 = 0.1) also shows that the simulation is stationary.PACF plot shows that the second lad is negatively correlated.
+```{r ex4_task2, message=FALSE, warning=FALSE}
+
+
+plot_ac_pacf_ar(1100,  0.6, -0.3, 0.1)
+```
+  
+  
+In second combination of parameters:
+
+- The first simulation: 
+     We can see strong correlation with second lag. There is a no steep drop in the ACF plot that shows that the simulation is non - stationary. KPSS test(p>0.05 = 0.01) also shows that the simulation is non-stationary. PACF plot shows that the second lad is positively correlated.
+
+ same goes for second and third simulation.
+```{r message=FALSE, warning=FALSE}
+
+plot_ac_pacf_ar(1100,  0.8, 0.2, 0.1)
+```
+  
+  
+In third combination of parameters for moving average model:
+
+- The first simulation: 
+We can see strong correlation in second lag. There is a steep drop in the ACF plot but KPSS test(p<0.05 = 0.1) shows that the simulation is stationary. PACF plot shows that the second lag is negatively correlated as well as the third and fourth.
+
+- The second simulation and third simulation is similar to first simulation. There exists no stationary.
+```{r message=FALSE, warning=FALSE}
+
+plot_ac_pacf_ma(1100,  0.6, -0.3, 0.1)
+```
+
+In fourth combination of parameters for moving average model:
+
+- The first simulation: 
+     We can see strong correlation in second lag. There is a steep drop in the ACF plot but KPSS test(p>0.05 = 0.01) shows that the simulation is non stationary. PACF plot shows that the 27th lag is negatively correlated.
+
+- The second simulation:
+    We can see strong correlation in second lag. There is a steep drop in the ACF plot and KPSS test(p<0.05 = 0.1) shows that the simulation is stationary. PACF plot shows that the second lag is negatively correlated.
+
+- The third simulation:
+  It is similar to the second simulation. We see no significant correlation in PACF plot.
+  
+```{r message=FALSE, warning=FALSE}
+
+plot_ac_pacf_ma(1100,  0.8, 0.2, 0.1)
+```
+
+## c)
+For all time series simulated in (a), fit the parameters of an ARIMA model using
+auto.arima (package forecast). Compare the estimated model parameters to the
+ground truth parameters. Which model parameter combinations can be restored?  
+
+
+ The first combination:
+- The first simulation:  The points are inside the circle. The estimated model parameters (2) confirms with the ground truth parameter (2).
+
+ The second simulation:
+   The points are inside the circle. The estimated model parameters (2) confirms with the ground truth parameter (2).
+
+ The third simulation:
+ The points are inside the circle. The estimated model parameters (2) confirm with the ground truth parameter (2).
+```{r ex4_task3, message=FALSE, warning=FALSE}
+
+autoarima_plot_ar(1100,  0.6, -0.3, 0.1)
+```
+
+ The second combination:
+- The first simulation:
+   The points are inside the circle. The estimated model parameters (0) don't confirm with the ground truth parameter(2).
+
+- The second simulation:
+   The points are inside the circle. The estimated model parameters (1) don't confirm with the ground truth parameter(2).
+
+- The third simulation:
+   The points are inside the circle. The estimated model parameters(1) don't confirm with the ground truth parameter(2).
+
+
+```{r message=FALSE, warning=FALSE}
+autoarima_plot_ar(1100,  0.8, 0.2, 0.1)
+```
+
+The third combination : MA  
+
+ The points are inside the circle. The estimated model parameters don't confirm with the ground truth parameter(2).
+
+```{r message=FALSE, warning=FALSE}
+
+autoarima_plot_ma(1100,  0.6, -0.3, 0.1)
+```
+
+The fourth combination : MA  
+The points are inside the circle. The estimated model parameters don't confirm with the ground truth parameter(2).
+```{r message=FALSE, warning=FALSE}
+
+autoarima_plot_ma(1100,  0.8, 0.2, 0.1)
+```
+
+AR(2) model parameter can be restored.
+
+## d)
+One parameter combination in Tab. 2 obviously violates the side conditions stated for
+AR(2) models. Show that first-order differences lead to a proper AR(2) model (i.e.
+fulfill the side conditions).
+
+AR(2) with  0.8, 0.2  violates the side conditions stated for AR(2) models. To be stationary, it should satisfy all the following:
+
+
+  - $\Theta_{1} + \Theta_{2} < 1$
+  
+  - $\Theta_{1} - \Theta_{2} < 1$
+  
+  - $|\Theta_{2}| < 1$
+
+It voilates the second condition.
+
+```{r ex4_task4, message=FALSE, warning=FALSE}
+
+Xt_AR = AR2.sim(1100,  0.8, 0.2, 0.1)
+Xt_AR=tail(Xt_AR,-100)
+print(kpss.test(Xt_AR))
+diff_xt <- diff(Xt_AR, lag = 2)
+
+
+ar2.fit<-ar.ols(diff_xt, aic = FALSE, order.max = 2, demean = TRUE)
+print(ar2.fit)
+```
+
+New coefficients validates all the condition.
