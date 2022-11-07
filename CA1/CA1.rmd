@@ -1,0 +1,740 @@
+---
+title: "DAT320: Compulsory assignment 1"
+date: "2022-10-09"
+output:
+  html_document: 
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+---
+
+# Exrercise 1
+
+## a)
+
+Load the ozone dataset from the .csv-file as a data frame in R. Clean the dataset
+by removing all columns except for "Date", "WSR.0"-"WSR.23" (hourly wind speed
+measurements) and "T.0"-"T.23" (hourly temperature measurements). Transform the
+column "Date" into a Date format. Plot variables "T.0" and "WSR.0" over all dates
+and compare them. Is there a trend or seasonality?
+
+
+
+Reading the data
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(imputeTS)
+
+ozone = read.csv(file = "data/ozone.csv", header=T)
+
+```
+
+Removing all columns except for the Date, WSR.0-WSR.23 and T.0-T.23 columns. Also transform the column "Date" into Date format.
+
+```{r}
+columns = c()
+columns <- "Date"
+for(i in 0:23){columns <- append(columns, paste("T",i, sep="."))}
+for(i in 0:23){columns <- append(columns, paste("WSR",i, sep="."))}
+
+df = ozone[columns]
+df$Date <- as.Date(df$Date)
+```
+
+
+Verify that it is indeed date type.
+```{r}
+class(df$Date)
+```
+
+Plotting the variables T.0 and WSR.0 over all dates and compare them. 
+
+```{r}
+
+par(mfrow=c(2,1))
+plot(x=df$Date, y=df$T.0, type="l", xlab="Date", ylab="Temperature")
+plot(x=df$Date, y=df$WSR.0, type="l", xlab="DATE", ylab="Wind Speed")
+```
+
+Temperature has high seasonality with missing values, wind speed has low seasonality with missing values, no visible trend in either.
+
+
+## b)
+
+Investigate the dataset for missing values. Note that some dates are missing entirely, in such cases, add new rows with the correct dates and NA values for the measurements (no hard-coding!). Finally, make sure that the data frame is sorted correctly (w.r.t. dates). Further, write an R-function to remove measurements on 29.02. in leap years and apply it to the data frame. You can check your code by dividing the number of rows by 365 (the result should be exactly 7).
+
+```{r}
+na_values = which(is.na(df))
+length(na_values)
+```
+
+There seem to be a 11458 missing values in the dataframe. 
+
+```{r}
+min_date = min(df$Date)
+max_date = max(df$Date)
+full_date_range <- seq(min_date, max_date, by = 1) 
+missing_dates = full_date_range[!full_date_range %in% df$Date]
+print(missing_dates)
+```
+
+There are 23 missing date values.  
+Adding them back to the dataframe
+
+```{r}
+for (i in 1:length(missing_dates)){
+  date = missing_dates[[i]]
+  df = df %>% add_row(Date = date)
+}
+```
+
+Verify that the missing values were filled
+
+```{r}
+print(nrow(df))
+```
+
+Sort the data by date
+
+```{r}
+df = arrange(df, Date)
+```
+
+Now we make a function to remove leap days. 
+
+```{r}
+remove_leap = function(df){
+  return (df %>% filter(!strftime(Date, "%m-%d")=='02-29' ))
+}
+```
+
+Apply the function to the dataframe and verify. 
+```{r}
+df = remove_leap(df)
+print(nrow(df)/7)
+```
+An integer. The function works. 
+
+## c)
+
+Reshape the dataset from wide to long (use reshape from the stats package - refer to the documentation of the reshape method). In the end, the data frame should have one column for dates, one for the time of day, one for wind speed, and one for temperature (see Tab. 1). The dimension of the resulting data frame should be 61320 x 4. Finally, create a new column named "DateTime" in POSIXct format, which contains the starting points of the observation intervals (e.g., for the very first entry, "1998-01-01 00:00:00").
+
+
+Reshaping the dataset from wide to long. 
+
+```{r}
+df_2 = stats::reshape(df, 
+               direction = "long", 
+               varying = names(df)[-1]
+               )
+# Sort by date and time 
+df_2 = arrange(df_2, Date, time)
+# Remove the id field
+df_2 = select(df_2, !id)
+
+# Rename columns 
+df_2 = rename(df_2, temperature = T)
+df_2 = rename(df_2, wind = WSR)
+```
+
+Create a new column DateTime
+
+```{r}
+df_2 = df_2 %>% mutate(DateTime = date + hours(time))
+```
+
+
+## d)
+Compute and plot the time series of (a) yearly average temperatures (± standard
+deviation), and (b) yearly median wind speeds (along with minimum and maximum wind speed)
+
+
+First we compute the yearly average temperatures and yearly median wind speeds
+
+
+```{r}
+
+df_2_summarized = df_2 %>% 
+  group_by(year = format(Date, "%Y")) %>% 
+  summarise(mean_temperature=mean(temperature, na.rm=TRUE),
+            sd_temperature = sd(temperature, na.rm=TRUE),
+            median_wind = mean(wind, na.rm=TRUE),
+            max_wind = max(wind, na.rm=TRUE), 
+            min_wind = min(wind, na.rm=TRUE)
+            )
+
+# Convert the mean and ds to numeric data types.
+df_2_summarized$sd_temperature = as.numeric(df_2_summarized$sd_temperature)
+df_2_summarized$mean_temperature = as.numeric(df_2_summarized$mean_temperature)
+```
+
+
+Then we plot the yearly temperatures +/- standard deviation
+```{r}
+ggplot(df_2_summarized, aes(x=year, y=mean_temperature, group = 1)) + 
+  geom_line() + 
+  geom_ribbon(aes(y = sd_temperature, 
+                  ymin = mean_temperature - sd_temperature, 
+                  ymax = mean_temperature + sd_temperature, 
+                  fill = 1),
+              alpha = .2)
+```
+
+
+Plotting over yearly median wind speeds.
+
+```{r}
+ggplot(df_2_summarized, aes(x=year, y=median_wind, group = 1)) + 
+  geom_line() + 
+  geom_ribbon(aes(y = sd_temperature, 
+                  ymin = min_wind, 
+                  ymax = max_wind, 
+                  fill = 1),
+              alpha = .2)
+
+```
+
+
+# Exrercise 2
+
+## a) 
+
+Load the dataset from the .csv-file as a data frame in R. Describe properties of the
+time series denoted as "T.missing" (exploratory analysis), focusing on missing values
+in particular. Characterize missing values as either (a) single missing points or (b)
+missing intervals.  
+How long is the longest sequence of missing values? (use the imputeTS package.)  
+Remove days of February 29 (you may use your coded function
+from Exercise 1).  
+  
+  
+Loading the data 
+
+```{r}
+library(readr)
+temperature <- read.csv("data\\temperature.csv")
+```
+
+Visualizing the missing values.
+```{r}
+library(visdat)
+vis_miss(temperature, cluster = FALSE, sort_miss = FALSE, show_perc = TRUE,
+  show_perc_col = TRUE, large_data_size = 9e+05,
+  warn_large_data = TRUE)
+
+```
+
+We see that we have several single missing points, and some missing intervals. To get a better visualization of this we will look at the satsNA, further down.  
+
+
+Removing the two other columns, Date and T.full, because we are looking at T.missing. 
+
+```{r}
+tstemp = subset(temperature, select = -c(Date,T.full) )
+```
+
+Leaving columns T.missing and dates, we call this so we know this is just the same but with the date column. 
+
+```{r}
+tstempdate = subset(temperature, select = -c(T.full))
+```
+
+
+
+
+```{r}
+summary(tstemp)
+```
+
+As we can see we have 701 NA values. 
+
+We can also find missing rows like this, by using the original dataframe temperature.
+
+```{r}
+missing_rows = temperature %>%  filter(is.na(T.missing))
+
+print(nrow(missing_rows))
+
+```
+
+Plot that shows all values, with date on x-axis and temperature on y-axis. 
+
+```{r}
+temperature$Date = as.Date(temperature$Date)
+plot(x=temperature$Date, y=temperature$T.missing, xlab="DATE", ylab="Temperatures")
+```
+
+Then we can look at a plot that shows all the missing values
+We see that we have a lot of missing sequences
+```{r}
+ggplot_na_distribution(temperature$T.missing, 
+                       xlab="DATE", 
+                       ylab="Temperatures")
+```
+
+
+Now we are supposed to find the longest sequence of missing values
+
+We convert the column into a vector.
+
+```{r}
+vec1 <- tstemp$T.missing
+```
+  
+The values seem to be missing randomly in most cases. There is a sequence of missing values as well. 
+
+  
+Now we can check how long the longest sequence of missing values are:
+
+```{r}
+statsNA(vec1)
+```
+
+The longest sequence of missing values is 401 in a row.
+We also see 240 single missing values and 30 intervals with NA values, where the smallest interval is two NA values.  
+
+We can also show this in a plot using ggplot.
+
+```{r}
+ggplot_na_gapsize(temperature$T.missing)
+```
+  
+The longest sequence of missing values is 401.  
+
+
+Removing days of February 29, using remove_leap function.  
+We call the new dataframe temperature1. We've created a new dataframe so we can see in the environment that some observations actually where removed. 
+
+```{r}
+remove_leap = function(df){
+  return (df %>% filter(!strftime(Date, "%m-%d")=='02-29' ))
+}
+
+temperature1 = remove_leap(temperature)
+```
+
+
+We see that 3 rows get removed, when we are removing February 29. 
+
+We take out the ts column again without leap date.
+
+```{r}
+tstemp1 = subset(temperature1, select = -c(Date,T.full) )
+```
+
+We now check if the statistics and the stasNA are the same when February 29 is removed. 
+
+```{r}
+summary(tstemp1)
+
+vec2 <- tstemp1$T.missing
+
+statsNA(vec2)
+
+```
+
+We see that the changes are small, so removing the leap date didn't have any impact on the stats of the column. 
+
+## b)
+Replace the missing value. 
+
+
+We are now going to replace the missing values, using two different methods. 
+We will use `tepmrature1` from now on as this has the leap date removed.
+
+### i)
+
+Replacing the missing value with the global mean, we know the mean value from the satsNa, but we calculate it here too: 
+
+```{r}
+library(imputeTS) 
+library(dplyr)
+
+mean(temperature1$T.missing, na.rm=TRUE)
+
+# mean replacement
+mean_repl <- na_mean(temperature1) 
+ggplot_na_imputations(temperature1$T.missing, mean_repl$T.missing)
+```
+  
+All missing values were replaced by the mean of value 7.539. 
+
+### ii) 
+
+Replacing the missing values with last observation carried forward (LOCF)
+
+```{r}
+# LOCF
+locf_repl <- na_locf(temperature1)
+ggplot_na_imputations(temperature1$T.missing, locf_repl$T.missing)
+
+```
+  
+Missing values are replaced by the last non-missing value. Sequential missing values will thus have a constant value replacement.
+
+
+Calculate RMSE between our fit and the ground truth (T.full).
+
+RMSE for the global mean replacement:
+
+```{r}
+library(Metrics)
+rmse(mean_repl$T.missing, mean_repl$T.full)
+```
+
+RMSE for LOCF replacement:
+
+```{r}
+rmse(locf_repl$T.missing, locf_repl$T.full)
+```
+
+
+Looking at RMSE, we're seeing lower error on the LOCF replacement, which is expected given that the missing value replacement with the LOCF replacement has values much closer to the actual values
+
+## c)
+
+We will not try other missing value replacement methods. 
+ - Median replcement
+ - Random replacement 
+ - Interpolation (linear and spline)
+
+*Median replacement*
+
+This method is advantageous when the time series has a trend, in which case the mean might not be a number close to the missing value.
+
+
+```{r}
+median(temperature1$T.missing, na.rm=TRUE)
+```
+The median value is 7.
+
+
+```{r}
+median_replace <- na_mean(temperature1, option = "median")
+
+ggplot_na_imputations(temperature1$T.missing , median_replace$T.missing)
+```
+
+The plot shows a constant value replacement similar to mean replacement.
+  
+  
+
+```{r}
+rmse(median_replace$T.missing, median_replace$T.full)
+```
+
+We get an RMSE of 3.407257 which close to mean imputation, which is to be expected as the mean and median values are very close to each other. 
+
+
+*Mean replacement with exponential weighting*
+This process will replace a missing value based on it`s closest neighbours. In theory, the replaced values will be close to the actual value. 
+
+```{r}
+median_repl = na_ma(temperature1, k = 4, weighting = "exponential")
+ggplot_na_imputations(temperature1$T.missing , median_repl$T.missing)
+```
+  
+
+The replaced values are close to their neighbours. There is a jump in values in the largest gap as well. 
+
+
+```{r}
+rmse(median_repl$T.missing, median_repl$T.full)
+```
+
+This method gives us an RMSE of 3,460431
+
+
+*Random variable replacement*
+Let's check if random value replacement is any better. 
+```{r}
+random_repl <- na_random(temperature1)
+ggplot_na_imputations(temperature1$T.missing, random_repl$T.missing)
+```
+  
+
+Missing values are filled with random values sampled from the rest of the time series. 
+
+
+```{r}
+rmse(random_repl$T.missing, random_repl$T.full)
+```
+6.191835 is the worst RMSE so far. 
+
+
+*Interpolation: Linear and Spline*
+
+
+
+Linear Interpolation: 
+This will fill in a missing value with the point on the line connecting the two nearest non-missing values.  
+This method has an advantage when there is a trend in the data, with low seasonality.
+
+```{r}
+li_repl <- na_interpolation(temperature1, option = "linear") 
+ggplot_na_imputations(temperature1$T.missing, li_repl$T.missing)
+```
+  
+The linear replacement in the largest gap shows linear interpolation working as expected. 
+```{r}
+rmse(li_repl$T.missing, li_repl$T.full)
+```
+  
+This gives us an RMSE of 3.181265. 
+
+
+Spline Interpolation: 
+This method help us fill in missing values at the peaks and vallyes of seasonality curves
+```{r}
+spline_repl = na_interpolation(temperature1, option = "spline")
+ggplot_na_imputations(temperature1$T.missing , spline_repl$T.missing)
+```
+  
+The interpolation was unable to handle the largest gap. 
+
+```{r}
+rmse(spline_repl$T.missing, spline_repl$T.full)
+```
+
+We get a RMSE of 32.8275 with spline interpolation. This high number of obvious from the huge dip we in the missing value replacement. 
+
+Among all the techniques, LOCF gives us the lowest RMSE of 2.658513. LOCF is working well because of the properties of our data. The values are very close to each other, i.e the delta between two points is not very high. Replacing a missing value with the last known data will not deviate it far from it's actual value. LOCF could bias the results and lead to overestimation or underestimation, but that does not happen with our data. It does fail where we have a long series of missing data, where it replaces all missing values with the same value. Luckily our data only had this in one spot. LOCF also has the advantage of being computationally inexpensive. A variant of LOCF, called NOCB (Next Observation Carried Backward) may yeild similar result in this dataset. 
+
+## d)
+Decompose the imputed time series (best imputation option from steps b and c), as
+well as the ground truth time series "T.full".
+
+
+- STL
+
+```{r}
+T.full.ts <- ts(locf_repl$T.full, frequency = 365)
+stl.full = stl(T.full.ts, s.window = "periodic" , robust =TRUE)
+plot(stl.full)
+```
+  
+There is an obvious seasonality in the data. The trend component doesn't have an overall slope. 
+
+
+```{r}
+T.missing.ts <- ts(locf_repl$T.missing, frequency = 365)
+stl.missing = stl(T.missing.ts, s.window = "periodic" , robust =TRUE)
+plot(stl.missing)
+```
+  
+The LOCF replacement did a good job in terms of RMSE, but looking at the STL decomposition plot, there is still a lot of data to be captured.  
+The missing value replacement in the largest gap hasn't really worked. We see this in the remainder plot.  
+
+
+
+# Exercise 3
+
+## a)
+Load the dataset from the .csv-file as a data frame in R, restrict it to the column
+"new_cases_per_million", and extract the countries with iso-codes ("SWE", "DNK",
+"NOR", "GBR", "ITA" and "IND") in the time frame from 16.03.2020 to 01.01.2022.
+Perform an exploratory data analysis and plot the time series. 
+
+
+```{r}
+library(tidyr) 
+library(ggplot2) 
+library(corrplot)
+```
+
+```{r}
+data <- read.csv("data\\covid.csv", header = TRUE, sep = ",") %>%
+filter(iso_code %in% c("SWE", "DNK","NOR", "GBR", "ITA" , "IND")) %>% select(date, iso_code, new_cases_per_million)
+
+data$date <- as.Date(data$date) 
+```
+
+Filter in data between given dates.
+```{r}
+data1 <- data %>%
+  filter(between(date, as.Date("2020-03-16"), as.Date("2022-01-01")))
+```
+
+
+```{r}
+ggplot(data1 ,aes(x = date , y = new_cases_per_million, group = iso_code)) + 
+  geom_line() + facet_grid(iso_code~.)
+```
+  
+Data for some countries are better than others. 
+Sweden's data seems to have a lot of missing values but they don't seem to be NA values.
+Data for Denmark towards the end shows erratic behaviour with a sudden dip and rise.
+
+## b)
+Let us look at the coorelation matrix between the various countries. 
+
+```{r}
+data1 %>%
+pivot_wider(names_from = iso_code,
+values_from = new_cases_per_million) %>% select(-date) %>%
+cor(use = "pairwise.complete.obs") %>% 
+corrplot(method = 'number')
+```
+  
+
+Denmark and Great Britain have highest correlation. Though this is not very evident from the graph.
+
+The autocorrelation and cross correlation plots.
+
+```{r fig.height=13, fig.width=12}
+
+temp <- data1 %>%
+  pivot_wider(names_from = iso_code,
+              values_from = new_cases_per_million) %>% select(-date)
+
+acf(temp, lag.max = NULL,
+    type = c("correlation"),
+    plot = TRUE)
+
+```
+
+Each country has high auto correlation with itself other than Sweden. This could be due to the 0 values. Sweden has a seasonality present in it's auto correlation.    
+Denmark has high cross correlation with Italy, Norway and Great Britain. This could mean that Covid cases started seeing rises and falls around the same time in all 4 countries. 
+India doesn't seem to be cross correlated with any other country. This would mean that India saw rise and fall of covid cases at a different time than 
+the rest of the countries.  
+
+
+## c)
+
+Perform a principal component analysis (PCA) and plot the scores and loadings.
+
+Performing PCA 
+
+```{r}
+data2 <- data1 %>%
+  pivot_wider(names_from = iso_code,
+              values_from = new_cases_per_million) %>%
+  select(-date) %>%
+  prcomp(scale=TRUE)
+```
+
+```{r}
+biplot(data2)
+```
+  
+  
+We can confirm what we saw in the cross correlation plots. India and Sweden are far away from the rest (high angles) and are not correlated with the rest. Norway and Denmark are highly correlated. 
+
+
+```{r}
+summary(data2)
+```
+
+Scores plot
+
+```{r}
+plot(data2$x[,1:2],
+     pch=21,
+     bg="black",
+     cex=1,
+     main="scores")
+  
+```
+
+Loadings plot 
+
+```{r}
+plot(data2$rotation[,1:2],
+     pch=21,
+     bg="black",
+     cex=1,
+     main="Loadings")
+     
+```
+
+## d) 
+
+Smooth the time series of each country.
+
+Let's try different types of smoothing. 
+
+Rolling average smoothing with kernel 3.
+```{r}
+library(zoo)
+df.mean.smoothed.3 = data1 %>% group_by(iso_code) %>% mutate(roll_mean = rollmean(new_cases_per_million, k=3, fill=0))
+ggplot(df.mean.smoothed.3 ,aes(x = date , y = roll_mean, group = iso_code)) +
+geom_line()  + facet_grid(iso_code~.)
+```
+
+Rolling average smoothing with kernel 5. 
+```{r}
+df.mean.smoothed.5 = data1 %>% group_by(iso_code) %>% mutate(roll_mean = rollmean(new_cases_per_million, k=5, fill=0))
+ggplot(df.mean.smoothed.5 ,aes(x = date , y = roll_mean, group = iso_code)) +
+  geom_line()  + facet_grid(iso_code~.)
+```
+
+Rolling median smoothing with kernel 3. 
+```{r}
+df.median.smoothed.3 = data1 %>% group_by(iso_code) %>% mutate(roll_median = rollmedian(new_cases_per_million, k=3, fill=0))
+ggplot(df.median.smoothed.3 ,aes(x = date , y = roll_median, group = iso_code)) +
+  geom_line()  + facet_grid(iso_code~.)
+```
+
+Looks like rolling mean with 5 kernel size is removing a lot of zero values in Sweden. We will investigate PCA with it. 
+
+```{r}
+# data3 <- df.mean.smoothed.5 %>%
+#   pivot_wider(names_from = iso_code,
+#               values_from = roll_mean) %>%
+#   select(-c(date, new_cases_per_million)) %>%
+#   prcomp(scale=TRUE)
+```
+We get an error when trying to do PCA: 
+`Error in svd(x, nu = 0, nv = k) : infinite or missing values in 'x'`
+Could not figure out the cause for the error.
+
+
+
+# Exercise 4
+
+## a)
+We were unable to prove the equality by hand, so we are going to show how parts of it could have been done in R. We are going to use the Beaver dataset to do this.  
+
+
+```{r}
+library(datasets)
+data("beavers")
+acf(beaver1$temp)
+```
+  
+Could not find an inverse autocorrelation function in R.
+
+
+## b)
+```{r}
+ccf(beaver1$temp, beaver1$activ)
+```
+  
+Could not find an inverse cross correlation function in R.
+
+## c)
+
+Figure 1.a's autocorrelation plot is Figure 2.c. Because the figure is white noise so the correlation is close to 0.  
+Figure 1.b's autocorrelation plot is Figure 2.b. Because there is a trend in the time series with the variance going up, so the autocorrelation decreases.  
+Figure 1.c's autocorrelation plot is Figure 2.a. The seasonality in the time series is akin to a trend going up and down over time. This translates to autocorrelation going down and back up again as lag increases.
+Figure 1.d's autocorrelation plot is Figure 2.d. 
+
+
+## d)
+
+The lag is of about 12 time steps. The time series has a high seasonality. As such it's ACF plot will be like that of Figure 2.a. The correlation will go down then back up again. 
+
+
+
+
+
+
+
+
+
+
+
