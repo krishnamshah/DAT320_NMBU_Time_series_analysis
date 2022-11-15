@@ -1291,133 +1291,50 @@ combinations in Tab. 2 describe proper AR(2) or MA(2) models?
 
 ```{r ex4_task1, message=FALSE, warning=FALSE}
 
-# rnorm = random number generator
-set.seed(10)
+library(forecast)
 
-#Autoregressive models (AR) : function to calculate AR2
-AR2.sim <- function(t_max, ar1, ar2, sigma)
-{
-  Xt = c(0,0)
-
-  for (i in 2:t_max)
-  {
-    et = rnorm(n=t_max + 100, mean=0, sd=sigma)
-    Xt[i+1] = ar1*Xt[i] + ar2*Xt[i-1] + et
-  }
-  while (i < 3)
-  {
-    Xt[i] = et
-  }
-  Xt
-}
-
-#Moving-Average models (MA) : function to calculate AR2
-MA2.sim <- function(t_max, ar1, ar2, sigma)
-{
-  Xt = c(0,0)
-  et = rnorm(n=t_max + 100, mean=0, sd=sigma)
-  for (i in 2:t_max)
-  {
-    Xt[i+1] = ar1*et[i] + ar2*et[i-1] + et
-  }
-  while (i < 3)
-  {
-    Xt[i] = et
-  }
-  Xt
-}
-
-# Autoregressive models (AR)
-plot_ar <- function(t_max, ar1, ar2, sigma){
-  par(mfrow = c(3, 1))
-  for (x in 1:3) {
-    Xt_AR = AR2.sim(t_max, ar1, ar2, sigma)
-    Xt_AR=tail(Xt_AR,-100)
-    assign(paste0("Xt_AR_", x), Xt_AR)
-    plot(Xt_AR, type = "l", main=paste0("Xt_AR_", x))
-  }
-}
-# Autoregressive models (AR) : plots acf and pacf
-plot_ac_pacf_ar <- function(t_max, ar1, ar2, sigma){
-  layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
-  for (x in 1:3) {
-    print(x)
-    Xt_AR = AR2.sim(t_max, ar1, ar2, sigma)
-    Xt_AR=tail(Xt_AR,-100)
-    assign(paste0("Xt_AR_", x), Xt_AR)
-    print(kpss.test(Xt_AR,null="Trend"))
-    plot(Xt_AR, type = "l", main=paste0("Xt_AR_", x))
-    
-    # test for trends
-    acf(Xt_AR,main=paste0("Xt_AR_", x))
-    pacf(Xt_AR, main=paste0("Xt_AR_", x))
-  }
-}
-
-
-# Autoregressive models (AR) : autoarima with autoplot
-autoarima_plot_ar <- function(t_max, ar1, ar2, sigma){
-  for (x in 1:3) {
-    Xt_AR = AR2.sim(t_max, ar1, ar2, sigma)
-    Xt_AR=tail(Xt_AR,-100)
-    fit <- auto.arima(Xt_AR)
-    fit %>% autoplot()
-    plot(fit)
-    plot(forecast(fit))
-    # summarize model
-    summary(fit)
-  }
-}
-
-#Moving-Average models (MA)
-plot_ma <- function(t_max, ar1, ar2, sigma){
-  par(mfrow = c(3, 1))
-  for (x in 1:3) {
-    Xt_MA = MA2.sim(t_max, ar1, ar2, sigma)
-    Xt_MA=tail(Xt_MA,-100)
-    assign(paste0("Xt_MA_", x), Xt_MA)
-    plot(Xt_MA, type = "l", main=paste0("Xt_MA_", x))
-  }
-}
-
-#Moving-Average models (MA): plots acf and pacf
-plot_ac_pacf_ma <- function(t_max, ar1, ar2, sigma){
-  layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
-  for (x in 1:3) {
-    print(x)
-    Xt_MA = MA2.sim(t_max, ar1, ar2, sigma)
-    Xt_MA=tail(Xt_MA,-100)
-    assign(paste0("Xt_MA_", x), Xt_MA)
-    print(kpss.test(Xt_MA,null="Trend"))
-    plot(Xt_MA, type = "l", main=paste0("Xt_MA_", x))
-    
-    # test for trends
-    acf(Xt_MA,main=paste0("Xt_MA_", x))
-    pacf(Xt_MA, main=paste0("Xt_MA_", x))
-  }
-}
-
-
-# Moving-Average models (MA): autoarima with autoplot
-autoarima_plot_ma <- function(t_max, ar1, ar2, sigma){
-  for (x in 1:3) {
-    Xt_MA = MA2.sim(t_max, ar1, ar2, sigma)
-    Xt_MA=tail(Xt_MA,-100)
-    fit <- auto.arima(Xt_MA)
-    fit %>% autoplot()
-    plot(fit)
-    plot(forecast(fit))
-    # summarize model
-    summary(fit)
-  }
-}
-
-plot_ar(1100,  0.6, -0.3, 0.1)
-plot_ar(1100,  0.8, 0.2, 0.1)
-plot_ma(1100,  0.6, -0.3, 0.1)
-plot_ma(1100,  0.8, 0.2, 0.1)
-```
+sim_ar <- function(param){
+  epsilon <- rnorm(n=1100, mean=0, sd=0.1)
+  x <- epsilon[1:2]
   
+  for(i in 3:length(epsilon)){
+    x[i] <- t(param) %*% x[c(i-1, i-2)] + epsilon[i]
+  }
+  x <- x[-c(1:100)]
+  return(ts(x))
+}
+
+sim_ma <- function(param){
+  epsilon <- rnorm(n=1100, mean=0, sd=0.1)
+  x <- epsilon[1:2]
+  
+  for(i in 3:length(epsilon)){
+    x[i] <- t(param) %*% epsilon[c(i-1, i-2)] + epsilon[i]
+  }
+  x <- x[-c(1:100)]
+  return(ts(x))
+}
+
+# simulate
+set.seed(10)
+param_list <- list(
+  c(0.6, -0.3),
+  c(0.8, 0.2))
+
+s <- c()
+for(phi in param_list){
+  sim <- replicate(3, sim_ar(phi))
+  s <- cbind(s, sim)
+}
+for(theta in param_list){
+  sim <- replicate(3, sim_ma(theta))
+  s <- cbind(s, sim)
+}
+names <- paste0(rep(c("AR","MA"), each = 2), 1:2)
+colnames(s) <- paste(rep(names, each = 3), rep(1:3, 4), sep = ".")
+```
+All models except the AR(2) model with parameters (0.8,0.2) define stationary stochastic processes. In case of the AR(2) model with parameters (0.8,0.2), the side condition of AR model parameters, namely φ1+φ2<1, is violated, resulting non-stationary time series.  
+
   
 AR(2) with  0.8, 0.2  violates the side conditions stated for AR(2) models. To be stationary, it should satisfy all the following:
 
@@ -1438,61 +1355,34 @@ Perform a KPSS tests - are the time series stationary?
 KPSS test : if p-value is < significance level (0.05), then the series is non-stationary. ACF and PACF assume stationary of the underlying time series. For a stationary time series, the ACF will drop to zero relatively quickly, while the ACF of non-stationary data decreases slowly.  
 
 
-In first combination of parameters:
 
- - The first simulation: 
-   We can see strong correlation with second lag. There is a steep drop in the ACF plot that shows that the simulation is stationary. KPSS test(p<0.05 = 0.1) also shows that the simulation is stationary. PACF plot shows that the second lad is negatively correlated.
-
-- The second simulation: 
-     We can see strong correlation with second lag. There is a steep drop in the ACF plot that shows that the simulation is stationary. KPSS test(p<0.05 = 0.1) also shows that the simulation is stationary.PACF plot shows that the second lad is negatively correlated.
-
-- The third simulation: 
-     We can see strong correlation with second lag. There is a steep drop in the ACF plot that shows that the simulation is stationary. KPSS test(p<0.05 = 0.1) also shows that the simulation is stationary.PACF plot shows that the second lad is negatively correlated.
 ```{r ex4_task2, message=FALSE, warning=FALSE}
 
+library(tseries)
 
-plot_ac_pacf_ar(1100,  0.6, -0.3, 0.1)
+s %>% as.data.frame() %>%
+      reshape(direction = "long", varying = list(1:3,4:6,7:9,10:12), v.names = names, timevar = "rep", idvar = "time") %>% 
+      reshape(direction = "long", varying = 2:5, v.names = "sim", timevar = "setup", times = names, idvar = c("rep", "time")) %>%
+      ggplot(aes(x = time, y = sim)) + geom_line() + facet_grid(setup ~ rep, scales = "free_y")
 ```
   
   
-In second combination of parameters:
 
-- The first simulation: 
-     We can see strong correlation with second lag. There is a no steep drop in the ACF plot that shows that the simulation is non - stationary. KPSS test(p>0.05 = 0.01) also shows that the simulation is non-stationary. PACF plot shows that the second lad is positively correlated.
-
- same goes for second and third simulation.
 ```{r message=FALSE, warning=FALSE}
 
-plot_ac_pacf_ar(1100,  0.8, 0.2, 0.1)
+for(i in 1:ncol(s)){
+  acf(s[,i], main=colnames(s)[i])
+  pacf(s[,i], main=colnames(s)[i])
+}
 ```
   
-  
-In third combination of parameters for moving average model:
-
-- The first simulation: 
-We can see strong correlation in second lag. There is a steep drop in the ACF plot but KPSS test(p<0.05 = 0.1) shows that the simulation is stationary. PACF plot shows that the second lag is negatively correlated as well as the third and fourth.
-
-- The second simulation and third simulation is similar to first simulation. There exists no stationary.
-```{r message=FALSE, warning=FALSE}
-
-plot_ac_pacf_ma(1100,  0.6, -0.3, 0.1)
-```
-
-In fourth combination of parameters for moving average model:
-
-- The first simulation: 
-     We can see strong correlation in second lag. There is a steep drop in the ACF plot but KPSS test(p>0.05 = 0.01) shows that the simulation is non stationary. PACF plot shows that the 27th lag is negatively correlated.
-
-- The second simulation:
-    We can see strong correlation in second lag. There is a steep drop in the ACF plot and KPSS test(p<0.05 = 0.1) shows that the simulation is stationary. PACF plot shows that the second lag is negatively correlated.
-
-- The third simulation:
-  It is similar to the second simulation. We see no significant correlation in PACF plot.
   
 ```{r message=FALSE, warning=FALSE}
 
-plot_ac_pacf_ma(1100,  0.8, 0.2, 0.1)
+apply(s, 2, kpss.test)
 ```
+
+The KPSS test underlines that samples from the ARIMA process with the second parameter combination violate the stationary assumption.
 
 ## c)
 For all time series simulated in (a), fit the parameters of an ARIMA model using
@@ -1500,51 +1390,30 @@ auto.arima (package forecast). Compare the estimated model parameters to the
 ground truth parameters. Which model parameter combinations can be restored?  
 
 
- The first combination:
-- The first simulation:  The points are inside the circle. The estimated model parameters (2) confirms with the ground truth parameter (2).
-
- The second simulation:
-   The points are inside the circle. The estimated model parameters (2) confirms with the ground truth parameter (2).
-
- The third simulation:
- The points are inside the circle. The estimated model parameters (2) confirm with the ground truth parameter (2).
 ```{r ex4_task3, message=FALSE, warning=FALSE}
 
-autoarima_plot_ar(1100,  0.6, -0.3, 0.1)
+arima_models <- apply(s, 2, auto.arima)
+gt_param_list <- rep(rep(param_list, each = 3), 2)
+
+for(i in 1:length(arima_models)){
+  pred_param <- arima_models[[i]]$coef
+  gt_param <- gt_param_list[[i]]
+  if(i <= 6){
+    names(gt_param) <- paste0("ar", 1:2)
+  }
+  else{
+    names(gt_param) <- paste0("ma", 1:2)
+  }
+  
+  res <- bind_rows(pred_param, gt_param) %>% 
+    mutate(type = c("prediction", "gt")) %>%
+    replace(is.na(.), 0)
+  print(res)
+}
 ```
 
- The second combination:
-- The first simulation:
-   The points are inside the circle. The estimated model parameters (0) don't confirm with the ground truth parameter(2).
+In general, the estimated parameters of stationary AR(2) samples are very close to the true parameters. For MA(2) samples, restoring ground truth values (and hyperparameters) is less accurate. Estimation of additional AR or MA terms (in particular for MA(2) samples) might be due to local optima in the discrete optimization procedure.
 
-- The second simulation:
-   The points are inside the circle. The estimated model parameters (1) don't confirm with the ground truth parameter(2).
-
-- The third simulation:
-   The points are inside the circle. The estimated model parameters(1) don't confirm with the ground truth parameter(2).
-
-
-```{r message=FALSE, warning=FALSE}
-autoarima_plot_ar(1100,  0.8, 0.2, 0.1)
-```
-
-The third combination : MA  
-
- The points are inside the circle. The estimated model parameters don't confirm with the ground truth parameter(2).
-
-```{r message=FALSE, warning=FALSE}
-
-autoarima_plot_ma(1100,  0.6, -0.3, 0.1)
-```
-
-The fourth combination : MA  
-The points are inside the circle. The estimated model parameters don't confirm with the ground truth parameter(2).
-```{r message=FALSE, warning=FALSE}
-
-autoarima_plot_ma(1100,  0.8, 0.2, 0.1)
-```
-
-AR(2) model parameter can be restored.
 
 ## d)
 One parameter combination in Tab. 2 obviously violates the side conditions stated for
@@ -1562,16 +1431,19 @@ AR(2) with  0.8, 0.2  violates the side conditions stated for AR(2) models. To b
 
 It voilates the second condition.
 
-```{r ex4_task4, message=FALSE, warning=FALSE}
 
-Xt_AR = AR2.sim(1100,  0.8, 0.2, 0.1)
-Xt_AR=tail(Xt_AR,-100)
-print(kpss.test(Xt_AR))
-diff_xt <- diff(Xt_AR, lag = 2)
+Another way:
 
+Let φ1=0.8,φ2=0.2∈R be arbitrary coefficients of AR(2). The model is given as
+xt=φ1xt−1+φ2xt−2+εt.
 
-ar2.fit<-ar.ols(diff_xt, aic = FALSE, order.max = 2, demean = TRUE)
-print(ar2.fit)
-```
+Applying a difference operator D leads to
+D(xt)=xt−xt−1=φ1xt−1+φ2xt−2−xt−1+εt=(φ1−1)xt−1+φ2xt−2+εt=φ1~xt−1+φ2xt−2+εt
 
-New coefficients validates all the condition.
+Thus, the differenced time series is an AR(2) model with parameters φ~1=φ1−1=−0.2 and φ2~=φ2=0.2, which fulfills the stated side conditions:
+
+|φ~2|=0.2<1
+(φ~1+φ~2)=(−0.2+0.2)=0<1
+(φ~2−φ1~)=(0.2+0.2)=0.4<1
+ 
+ 
